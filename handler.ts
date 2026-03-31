@@ -1,12 +1,5 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
-import { authMiddleware } from '../../lib/auth';
-import { successResponse, errorResponse } from '../../lib/response';
-
-/**
- * News Aggregator API
- * Fetch top news by topic using free RSS feeds from major outlets.
- * No API key needed - parses public RSS/Atom feeds.
- */
+// ClawHub Local Skill - runs entirely in your agent, no API key required
+// News Aggregator API - Fetch top news by topic using free RSS feeds
 
 const RSS_FEEDS: Record<string, string[]> = {
   'technology': ['https://feeds.arstechnica.com/arstechnica/index', 'https://www.theverge.com/rss/index.xml'],
@@ -37,30 +30,26 @@ function parseRSSItems(xml: string, source: string): NewsItem[] {
   return items;
 }
 
-async function handler(req: VercelRequest, res: VercelResponse) {
-  const { topic, max_results } = req.body || {};
-  const t = (topic || 'general').toLowerCase();
+export async function run(input: { topic?: string; max_results?: number }) {
+  const t = (input.topic || 'general').toLowerCase();
   const feeds = RSS_FEEDS[t] || RSS_FEEDS['general'];
-  const limit = Math.min(max_results || 10, 50);
+  const limit = Math.min(input.max_results || 10, 50);
 
-  try {
-    const startTime = Date.now();
-    const allItems: NewsItem[] = [];
-    for (const feedUrl of feeds) {
-      try {
-        const resp = await fetch(feedUrl, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'Claw0x-News/1.0' } });
-        if (resp.ok) { const xml = await resp.text(); allItems.push(...parseRSSItems(xml, new URL(feedUrl).hostname)); }
-      } catch {}
-    }
-    allItems.sort((a, b) => { if (!a.pubDate || !b.pubDate) return 0; return new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime(); });
-    const results = allItems.slice(0, limit);
-    return successResponse(res, {
-      articles: results, total: results.length, topic: t, sources: [...new Set(results.map(r => r.source))],
-      _meta: { skill: 'news-aggregator', latency_ms: Date.now() - startTime, feeds_queried: feeds.length },
-    });
-  } catch (error: any) {
-    return errorResponse(res, 'News fetch failed', 500, error.message);
+  const startTime = Date.now();
+  const allItems: NewsItem[] = [];
+  for (const feedUrl of feeds) {
+    try {
+      const resp = await fetch(feedUrl, { signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'Claw0x-News/1.0' } });
+      if (resp.ok) { const xml = await resp.text(); allItems.push(...parseRSSItems(xml, new URL(feedUrl).hostname)); }
+    } catch {}
   }
+  allItems.sort((a, b) => { if (!a.pubDate || !b.pubDate) return 0; return new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime(); });
+  const results = allItems.slice(0, limit);
+
+  return {
+    articles: results, total: results.length, topic: t, sources: [...new Set(results.map(r => r.source))],
+    _meta: { skill: 'news-aggregator', latency_ms: Date.now() - startTime, feeds_queried: feeds.length },
+  };
 }
 
-export default authMiddleware(handler);
+export default run;
